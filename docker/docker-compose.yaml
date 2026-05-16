@@ -1,0 +1,56 @@
+services:
+  postgres:
+    image: postgres:15
+    container_name: postgres_bd
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: postgres
+    ports:
+      - "5433:5432"
+    volumes:
+      - ../data:/data
+      - ../sql/create_star_schema.sql:/docker-entrypoint-initdb.d/create_star_schema.sql
+    networks:
+      - spark_network
+
+  clickhouse:
+    image: clickhouse/clickhouse-server
+    container_name: clickhouse_bd
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+    environment:
+      - CLICKHOUSE_DB=analytics
+      - CLICKHOUSE_USER=default
+      - CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1
+      - ALLOW_EMPTY_PASSWORD=yes
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+      - ../sql/clickhouse_tables.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - spark_network
+
+  spark:
+    image: apache/spark:3.4.1
+    container_name: spark_bd
+    volumes:
+      - ../spark/jobs:/opt/jobs
+      - ../spark/jars:/opt/jars
+      - ../data:/data
+    depends_on:
+      - postgres
+      - clickhouse
+    environment:
+      - SPARK_DRIVER_MEMORY=2g
+      - SPARK_EXECUTOR_MEMORY=2g
+    networks:
+      - spark_network
+    command: tail -f /dev/null
+
+volumes:
+  clickhouse_data:
+
+networks:
+  spark_network:
+    driver: bridge
