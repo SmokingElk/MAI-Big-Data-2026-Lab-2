@@ -49,29 +49,62 @@ def write_to_clickhouse(df, table_name, ch_config):
      .save())
 
 
-def create_sales_joined_df(spark, pg_config):
-    """Create a joined sales dataframe with all dimensions"""
+def create_products_sales_df(spark, pg_config):
     fact = read_table_from_postgres(spark, "fact_sales", pg_config)
     products = read_table_from_postgres(spark, "dim_products", pg_config)
-    customers = read_table_from_postgres(spark, "dim_customers", pg_config)
-    stores = read_table_from_postgres(spark, "dim_stores", pg_config)
-    suppliers = read_table_from_postgres(spark, "dim_suppliers", pg_config)
     
     return (fact.join(products, on="product_id", how="left")
-            .join(customers, on="customer_id", how="left")
-            .join(stores, on="store_id", how="left")
-            .join(suppliers, on="supplier_id", how="left")
             .withColumn("order_date", F.to_date(F.col("order_date")))
-            .withColumn("year", F.year(F.col("order_date")))
-            .withColumn("month", F.month(F.col("order_date")))
+            .withColumn("review_count", F.when(F.col("review_id").isNull(), F.lit(0)).otherwise(F.lit(1))))
+
+
+def create_customers_sales_df(spark, pg_config):
+    fact = read_table_from_postgres(spark, "fact_sales", pg_config)
+    customers = read_table_from_postgres(spark, "dim_customers", pg_config)
+    
+    return (fact.join(customers, on="customer_id", how="left")
+            .withColumn("order_date", F.to_date(F.col("order_date")))
             .withColumn(
                 "customer_name",
                 F.concat_ws(" ", F.col("first_name").cast("string"), F.col("last_name").cast("string"))
-            )
+            ))
+
+
+def create_time_sales_df(spark, pg_config):
+    fact = read_table_from_postgres(spark, "fact_sales", pg_config)
+    
+    return (fact
+            .withColumn("order_date", F.to_date(F.col("order_date")))
+            .withColumn("year", F.year(F.col("order_date")))
+            .withColumn("month", F.month(F.col("order_date"))))
+
+
+def create_stores_sales_df(spark, pg_config):
+    fact = read_table_from_postgres(spark, "fact_sales", pg_config)
+    stores = read_table_from_postgres(spark, "dim_stores", pg_config)
+    
+    return (fact.join(stores, on="store_id", how="left")
+            .withColumn("order_date", F.to_date(F.col("order_date"))))
+
+
+def create_suppliers_sales_df(spark, pg_config):
+    fact = read_table_from_postgres(spark, "fact_sales", pg_config)
+    suppliers = read_table_from_postgres(spark, "dim_suppliers", pg_config)
+    
+    return (fact.join(suppliers, on="supplier_id", how="left")
+            .withColumn("order_date", F.to_date(F.col("order_date")))
             .withColumn(
                 "supplier_name",
                 F.concat_ws(" ", F.col("seller_first_name").cast("string"), F.col("seller_last_name").cast("string"))
-            )
+            ))
+
+
+def create_quality_sales_df(spark, pg_config):
+    fact = read_table_from_postgres(spark, "fact_sales", pg_config)
+    products = read_table_from_postgres(spark, "dim_products", pg_config)
+    
+    return (fact.join(products, on="product_id", how="left")
+            .withColumn("order_date", F.to_date(F.col("order_date")))
             .withColumn("review_count", F.when(F.col("review_id").isNull(), F.lit(0)).otherwise(F.lit(1))))
 
 
@@ -244,17 +277,21 @@ def main():
     try:
         pg_config = get_postgres_config()
         ch_config = get_clickhouse_config()
-        
-        # Create joined sales dataframe
-        sales_df = create_sales_joined_df(spark, pg_config)
+
+        products_sales_df = create_products_sales_df(spark, pg_config)
+        customers_sales_df = create_customers_sales_df(spark, pg_config)
+        time_sales_df = create_time_sales_df(spark, pg_config)
+        stores_sales_df = create_stores_sales_df(spark, pg_config)
+        suppliers_sales_df = create_suppliers_sales_df(spark, pg_config)
+        quality_sales_df = create_quality_sales_df(spark, pg_config)
         
         # Generate all reports
-        create_products_reports(sales_df, ch_config)
-        create_customers_reports(sales_df, ch_config)
-        create_time_reports(sales_df, ch_config)
-        create_stores_reports(sales_df, ch_config)
-        create_suppliers_reports(sales_df, ch_config)
-        create_quality_reports(sales_df, ch_config)
+        create_products_reports(products_sales_df, ch_config)
+        create_customers_reports(customers_sales_df, ch_config)
+        create_time_reports(time_sales_df, ch_config)
+        create_stores_reports(stores_sales_df, ch_config)
+        create_suppliers_reports(suppliers_sales_df, ch_config)
+        create_quality_reports(quality_sales_df, ch_config)
         
         print("ETL to ClickHouse completed successfully!")
         
